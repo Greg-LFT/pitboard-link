@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -58,9 +57,11 @@ type PrinterCfg struct {
 	Enabled bool   `json:"enabled"`
 }
 
-const maxImp = 4
+// 1.5.0 : un Link par imprimante : il ne suit que la machine sur laquelle il est installé
+// (emplacement 0). Les anciennes entrées d'autres imprimantes (1.2.0 à 1.4.2) sont ignorées.
+const maxImp = 1
 
-// Imp : réglages effectifs d'une imprimante (emplacement 0 ou supplémentaire).
+// Imp : réglages effectifs de l'imprimante suivie.
 type Imp struct {
 	Slot              int
 	Name, Model       string
@@ -74,37 +75,15 @@ type Imp struct {
 }
 
 func (c Config) Imprimante(slot int) (Imp, bool) {
-	if slot == 0 {
-		return Imp{Slot: 0, Name: c.Name, Model: c.Model, Moonraker: c.Moonraker, APIKey: c.APIKey, Cam: c.Cam,
-			CamURL: c.CamURL, Enabled: true, Host: "127.0.0.1", Port: 7125, Type: "klipper"}, true
+	if slot != 0 {
+		return Imp{}, false
 	}
-	for _, p := range c.Printers {
-		if p.Slot == slot {
-			port := p.Port
-			if port <= 0 {
-				port = 7125
-			}
-			if p.Type != "" && p.Type != "klipper" {
-				return Imp{}, false // ancienne entrée Bambu (1.3.0) : ignorée
-			}
-			return Imp{Slot: slot, Name: p.Name, Model: p.Model, Moonraker: fmt.Sprintf("http://%s:%d", p.Host, port),
-				APIKey: p.APIKey, Cam: p.Cam, CamURL: p.CamURL, Enabled: p.Enabled, Host: p.Host, Port: port,
-				Type: "klipper"}, true
-		}
-	}
-	return Imp{}, false
+	return Imp{Slot: 0, Name: c.Name, Model: c.Model, Moonraker: c.Moonraker, APIKey: c.APIKey, Cam: c.Cam,
+		CamURL: c.CamURL, Enabled: true, Host: "127.0.0.1", Port: 7125, Type: "klipper"}, true
 }
 
-// Emplacements en service (0 d'abord).
-func (c Config) Emplacements() []int {
-	out := []int{0}
-	for s := 1; s < maxImp; s++ {
-		if p, ok := c.Imprimante(s); ok && p.Host != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
+// Emplacements en service : la machine du Link seulement.
+func (c Config) Emplacements() []int { return []int{0} }
 
 func defaultConfig() Config {
 	return Config{

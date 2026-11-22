@@ -40,7 +40,6 @@ type App struct {
 	h264s   [maxImp]*H264Hub // 1.4.0
 	stops   [maxImp]chan struct{}
 	changed chan struct{}
-	decouv  Decouverte // 1.3.0 : recherche d'imprimantes sur le réseau
 	fp      string
 	started time.Time
 	tun     *Tunnel
@@ -453,13 +452,6 @@ func (a *App) postConfig(body []byte) (int, string) {
 	cfg := a.store.Config()
 	changed := false
 	if lst, ok := d["printers"].([]any); ok {
-		old := map[int]PrinterCfg{}
-		for _, p := range cfg.Printers {
-			old[p.Slot] = p
-		}
-		var nouv []PrinterCfg
-		pris := map[int]bool{0: true}
-		var ajouts []M
 		for _, pv := range lst {
 			p, _ := pv.(map[string]any)
 			if p == nil {
@@ -484,36 +476,9 @@ func (a *App) postConfig(body []byte) (int, string) {
 				}
 				continue
 			}
-			if slot > 0 && slot < maxImp && !pris[slot] {
-				pris[slot] = true
-				pc := old[slot]
-				pc.Slot = slot
-				appliquerImp(&pc, p)
-				nouv = append(nouv, pc)
-			} else {
-				ajouts = append(ajouts, p)
-			}
+			return 409, `{"error":"Un Pitboard Link suit seulement l'imprimante sur laquelle il est installé : installe un Link sur chaque imprimante"}`
 		}
-		for _, p := range ajouts {
-			libre := -1
-			for s := 1; s < maxImp; s++ {
-				if !pris[s] {
-					libre = s
-					break
-				}
-			}
-			if libre < 0 {
-				return 409, fmt.Sprintf(`{"error":"Pitboard Link suit au plus %d imprimantes"}`, maxImp)
-			}
-			pris[libre] = true
-			pc := PrinterCfg{Slot: libre, Cam: true, Enabled: true}
-			appliquerImp(&pc, p)
-			if pc.Host == "" {
-				return 400, `{"error":"adresse de l'imprimante manquante"}`
-			}
-			nouv = append(nouv, pc)
-		}
-		cfg.Printers = nouv
+		cfg.Printers = nil // 1.5.0 : anciennes imprimantes supplémentaires retirées
 		changed = true
 	}
 	if v, ok := d["autoUpdate"].(bool); ok {
@@ -532,47 +497,6 @@ func (a *App) postConfig(body []byte) (int, string) {
 		a.notify()
 	}
 	return 200, `{"ok":true,"reboot":false,"wifi":false}`
-}
-
-func appliquerImp(pc *PrinterCfg, p map[string]any) {
-	pc.Type = "klipper"
-	if v, ok := p["name"].(string); ok {
-		pc.Name = trunc(strings.TrimSpace(v), 40)
-	}
-	if v, ok := p["model"].(string); ok {
-		pc.Model = trunc(strings.TrimSpace(v), 23)
-	}
-	if v, ok := p["host"].(string); ok {
-		h := strings.TrimSpace(v)
-		h = strings.TrimPrefix(strings.TrimPrefix(h, "http://"), "https://")
-		h = strings.TrimRight(h, "/")
-		if hh, pp, err := net.SplitHostPort(h); err == nil {
-			h = hh
-			if n, err := strconv.Atoi(pp); err == nil {
-				pc.Port = n
-			}
-		}
-		if h != pc.Host {
-			pc.Host = h
-		}
-	}
-	if v, ok := p["port"]; ok {
-		if n := jInt(v, 0); n > 0 && n < 65536 {
-			pc.Port = n
-		}
-	}
-	if v, ok := p["apiKey"].(string); ok && v != "" {
-		pc.APIKey = strings.TrimSpace(v)
-	}
-	if v, ok := p["cam"]; ok {
-		pc.Cam = jInt(v, 1) != 0
-	}
-	if v, ok := p["enabled"].(bool); ok {
-		pc.Enabled = v
-	}
-	if pc.Port <= 0 {
-		pc.Port = 7125
-	}
 }
 
 func (a *App) notify() {
@@ -601,9 +525,6 @@ func (a *App) handle(ctx context.Context, method, path string, q url.Values, bod
 			return js(404, `{"error":"imprimante inconnue"}`)
 		}
 		slot = n
-	}
-	if method == "GET" && path == "/api/klscan" {
-		return 200, "application/json", a.decouv.KlScan(q.Has("start")), nil
 	}
 	kl, cam := a.klipper(slot), a.camera(slot)
 	if kl == nil && path != "/api/config" && path != "/api/reset" && path != "/api/reboot" {

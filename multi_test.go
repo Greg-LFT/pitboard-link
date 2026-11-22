@@ -31,53 +31,38 @@ func fauxMoonraker() *httptest.Server {
 	}))
 }
 
-func TestMultiImprimantes(t *testing.T) {
+// 1.5.0 : un Link ne suit que sa machine : une autre imprimante est refusée.
+func TestUneSeuleImprimante(t *testing.T) {
 	srv := fauxMoonraker()
 	defer srv.Close()
 	host, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
-	dir, _ := os.MkdirTemp("", "multi")
+	dir, _ := os.MkdirTemp("", "une")
 	defer os.RemoveAll(dir)
 	st, _ := openStore(dir)
 	cfg := st.Config()
-	cfg.Moonraker = "http://127.0.0.1:1" // imprimante de la machine injoignable
+	cfg.Moonraker = "http://" + srv.Listener.Addr().String()
+	cfg.Printers = []PrinterCfg{{Slot: 1, Type: "klipper", Host: "192.168.0.50", Port: 7125, Enabled: true}} // ancienne 1.4.x
 	st.SaveConfig(cfg)
 	app := &App{store: st, id: "L000000000AA", started: time.Now(), changed: make(chan struct{}, 1)}
 	app.e2e = newE2E(st, app.id)
 	app.syncImprimantes()
 	pn, _ := strconv.Atoi(port)
-	c, s := app.postConfig([]byte(`{"printers":[{"slot":0,"type":"klipper","name":"Q2"},{"slot":-1,"type":"klipper","name":"Voron","host":"` + host + `","port":` + strconv.Itoa(pn) + `}]}`))
-	if c != 200 {
+	c, _ := app.postConfig([]byte(`{"printers":[{"slot":0,"type":"klipper","name":"Q2"},{"slot":-1,"type":"klipper","name":"Voron","host":"` + host + `","port":` + strconv.Itoa(pn) + `}]}`))
+	if c != 409 {
+		t.Fatalf("ajout d'une autre imprimante : %d au lieu de 409", c)
+	}
+	if c, s := app.postConfig([]byte(`{"printers":[{"slot":0,"type":"klipper","name":"Q2"}]}`)); c != 200 {
 		t.Fatal(s)
 	}
 	time.Sleep(2500 * time.Millisecond)
 	var d struct {
 		Printers []map[string]any `json:"printers"`
-		Display  map[string]any   `json:"display"`
 	}
 	json.Unmarshal(app.statusJSON(true), &d)
-	if len(d.Printers) != 2 {
-		t.Fatalf("imprimantes : %d", len(d.Printers))
+	if len(d.Printers) != 1 || d.Printers[0]["name"] != "Q2" || d.Printers[0]["progress"].(float64) != 42 {
+		t.Fatalf("imprimantes : %v", d.Printers)
 	}
-	v := d.Printers[1]
-	if v["slot"].(float64) != 1 || v["name"] != "Voron" || v["phase"] != "impression" || v["progress"].(float64) != 42 {
-		t.Fatalf("imprimante 2 : %v", v)
-	}
-	if d.Display["src"].(float64) != 1 {
-		t.Fatalf("tuile : %v", d.Display)
-	}
-	var cj struct{ Printers []map[string]any }
-	json.Unmarshal(app.configJSON(), &cj)
-	if len(cj.Printers) != 2 || cj.Printers[1]["host"] != host {
-		t.Fatalf("config : %v", cj.Printers)
-	}
-	// Commande sur l'emplacement 2 : objet inconnu (pas d'objets listés) → 400, mais l'imprimante est bien trouvée.
-	code, _, _, _ := app.handle(nil, "POST", "/api/cancel", map[string][]string{"p": {"1"}}, nil, true)
-	if code == 404 {
-		t.Fatal("emplacement 1 introuvable")
-	}
-	// Retrait : liste avec seulement l'emplacement 0.
-	app.postConfig([]byte(`{"printers":[{"slot":0,"type":"klipper"}]}`))
-	if app.klipper(1) != nil {
-		t.Fatal("emplacement 1 toujours suivi")
+	if app.klipper(1) != nil || len(app.store.Config().Printers) != 0 {
+		t.Fatal("ancienne imprimante supplémentaire encore suivie")
 	}
 }

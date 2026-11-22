@@ -10,8 +10,7 @@ func TestSansBambu(t *testing.T) {
 	if _, ok := c.Imprimante(1); ok {
 		t.Fatal("une entrée Bambu ne doit plus être suivie")
 	}
-	got := c.Emplacements()
-	if len(got) != 2 || got[0] != 0 || got[1] != 2 {
+	if got := c.Emplacements(); len(got) != 1 || got[0] != 0 {
 		t.Fatalf("emplacements = %v", got)
 	}
 }

@@ -37,7 +37,7 @@ Architectures : arm64, armv7, mipsle, amd64. Chaque exécutable est vérifié pa
 
 ## Fonctions
 
-- Suivi de jusqu'à 4 imprimantes Klipper : celle de la machine, et 3 autres du réseau (Moonraker).
+- Un Link par imprimante : il suit la machine sur laquelle il est installé, et seulement elle.
 - Progression, temps restant, températures, ventilateurs, objets, historique, miniature du fichier.
 - Commandes : pause, reprise, annulation, ignorer un objet.
 - Caméra : MJPEG (mjpg-streamer, ustreamer, crowsnest) ; vidéo H.264 sans réencodage quand la webcam

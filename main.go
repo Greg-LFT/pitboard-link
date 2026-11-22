@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var linkVersion = "1.4.2"
+var linkVersion = "1.5.0"
 
 const defaultDir = "/opt/pitboard-link/data"
 
