@@ -24,7 +24,6 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -204,37 +203,6 @@ func (s *Store) SetToken(t string) {
 		return
 	}
 	writeFileAtomic(s.path("token"), []byte(t+"\n"), 0o600)
-	os.Remove(s.path(fichierFenetre)) // lié : la fenêtre d'appairage local se ferme
-}
-
-// 1.6.1 : fenêtre d'appairage local. Le code n'est donné sur le WiFi (/api/pair) que pendant
-// dureeFenetre après son ouverture par le propriétaire : à l'installation (install.sh, lancé en SSH)
-// ou avec « sudo pitboard-link appairage ». Elle se ferme dès que le Link est lié.
-const (
-	fichierFenetre = "fenetre-appairage"
-	dureeFenetre   = 30 * time.Minute
-)
-
-// FenetreAppairage : fin de la fenêtre d'appairage local, ou zéro si elle est fermée.
-func (s *Store) FenetreAppairage() time.Time {
-	b, err := os.ReadFile(s.path(fichierFenetre))
-	if err != nil {
-		return time.Time{}
-	}
-	t, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
-	if err != nil {
-		return time.Time{}
-	}
-	fin := time.Unix(t, 0).Add(dureeFenetre)
-	if time.Now().After(fin) || time.Unix(t, 0).After(time.Now().Add(time.Minute)) {
-		return time.Time{}
-	}
-	return fin
-}
-
-// OuvrirFenetre : ouvre la fenêtre d'appairage local pour dureeFenetre.
-func (s *Store) OuvrirFenetre() error {
-	return writeFileAtomic(s.path(fichierFenetre), []byte(strconv.FormatInt(time.Now().Unix(), 10)+"\n"), 0o644)
 }
 
 // ---------------------------------------------------------------------------

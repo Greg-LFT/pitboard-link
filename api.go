@@ -614,19 +614,10 @@ func (a *App) localHandler(w http.ResponseWriter, r *http.Request) {
 		a.streamCam(w, r)
 		return
 	}
-	// 1.6.0 : liaison au compte depuis le WiFi local, sans SSH : l'app (même réseau, adresse privée
-	// vérifiée plus haut) lit le code d'appairage en cours et le présente au relais avec son compte.
-	// Être sur le réseau de l'imprimante sert de preuve, comme pour un boîtier neuf.
+	// 1.6.2 : l'app trouve le Link sur le WiFi (identifiant, lié ou non). Le code d'appairage n'est
+	// jamais donné sur le réseau : il se lit sur l'imprimante (installation ou pitboard-link code).
 	if r.Method == "GET" && r.URL.Path == "/api/pair" {
 		d := M{"id": a.id, "version": linkVersion, "lie": tok != ""}
-		// 1.6.1 : seulement pendant la fenêtre ouverte par le propriétaire (installation, ou sudo pitboard-link appairage).
-		fin := a.store.FenetreAppairage()
-		d["fenetre"] = tok == "" && !fin.IsZero()
-		if tok == "" && !fin.IsZero() && a.tun != nil {
-			if c, exp := a.tun.CodeAppairage(); c != "" {
-				d["code"], d["exp"] = c, exp-time.Now().Unix()
-			}
-		}
 		b, _ := json.Marshal(d)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

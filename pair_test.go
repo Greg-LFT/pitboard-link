@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// 1.6.0 : /api/pair, lu par l'app sur le WiFi local pour lier le Link au compte sans SSH.
+// 1.6.2 : /api/pair dit seulement qui est là ; jamais le code d'appairage.
 func TestPairLocal(t *testing.T) {
 	st := &Store{dir: t.TempDir()}
 	app := &App{store: st, id: "L000000000AC", changed: make(chan struct{}, 1)}
@@ -27,22 +27,11 @@ func TestPairLocal(t *testing.T) {
 		t.Fatalf("réponse inattendue %d %v", c, d)
 	}
 	if _, ok := d["code"]; ok {
-		t.Fatal("code donné sans tunnel")
+		t.Fatal("code d'appairage donné sur le réseau")
 	}
-	if d["fenetre"] != false {
-		t.Fatalf("fenêtre ouverte sans installation : %v", d)
-	}
-	if err := st.OuvrirFenetre(); err != nil {
-		t.Fatal(err)
-	}
-	if _, d := lire("192.168.0.10"); d["fenetre"] != true {
-		t.Fatalf("fenêtre non signalée : %v", d)
-	}
+
 	st.SetToken("jeton-du-compte-0123")
 	if _, d := lire("192.168.0.10"); d["lie"] != true {
 		t.Fatalf("lié non signalé : %v", d)
-	}
-	if !st.FenetreAppairage().IsZero() {
-		t.Fatal("fenêtre restée ouverte après la liaison")
 	}
 }

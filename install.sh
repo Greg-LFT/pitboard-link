@@ -181,8 +181,7 @@ if cam and not c.get("camUrl"): c["camUrl"] = cam
 if cle: c["apiKey"] = cle
 json.dump(c, open(p, "w"), indent=2)
 EOF
-# 1.6.1 : fenêtre d'appairage depuis le WiFi local, 30 min après l'installation (ou « sudo pitboard-link appairage »).
-r sh -c "date +%s > '$DONNEES/fenetre-appairage'"
+r rm -f "$DONNEES/fenetre-appairage"
 r chown -R "$UTIL":"$UTIL" "$DONNEES"
 r sh -c "chmod 600 '$DONNEES'/config.json '$DONNEES'/link.key '$DONNEES'/token '$DONNEES'/tls.key 2>/dev/null || true"
 

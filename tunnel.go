@@ -63,16 +63,6 @@ func newTunnel(app *App, priv ed25519.PrivateKey) *Tunnel {
 
 func (t *Tunnel) Up() bool { return t.up.Load() }
 
-// CodeAppairage : code d'appairage en cours et son expiration (vide si lié ou pas encore reçu).
-func (t *Tunnel) CodeAppairage() (string, int64) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.codeExp == 0 || time.Now().Unix() >= t.codeExp {
-		return "", 0
-	}
-	return t.code, t.codeExp
-}
-
 func (t *Tunnel) Reconnect() {
 	t.mu.Lock()
 	c := t.conn
