@@ -619,7 +619,10 @@ func (a *App) localHandler(w http.ResponseWriter, r *http.Request) {
 	// Être sur le réseau de l'imprimante sert de preuve, comme pour un boîtier neuf.
 	if r.Method == "GET" && r.URL.Path == "/api/pair" {
 		d := M{"id": a.id, "version": linkVersion, "lie": tok != ""}
-		if tok == "" && a.tun != nil {
+		// 1.6.1 : seulement pendant la fenêtre ouverte par le propriétaire (installation, ou sudo pitboard-link appairage).
+		fin := a.store.FenetreAppairage()
+		d["fenetre"] = tok == "" && !fin.IsZero()
+		if tok == "" && !fin.IsZero() && a.tun != nil {
 			if c, exp := a.tun.CodeAppairage(); c != "" {
 				d["code"], d["exp"] = c, exp-time.Now().Unix()
 			}

@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var linkVersion = "1.6.0"
+var linkVersion = "1.6.1"
 
 const defaultDir = "/opt/pitboard-link/data"
 
@@ -43,6 +43,14 @@ func main() {
 			fatal(err)
 		}
 		fmt.Println(id)
+	case "appairage":
+		// 1.6.1 : ouvre 30 min la liaison au compte depuis le WiFi local (l'app le trouve et le lie d'un geste).
+		st := &Store{dir: *dir}
+		if err := st.OuvrirFenetre(); err != nil {
+			fmt.Fprintln(os.Stderr, "Impossible d'ouvrir la fenêtre d'appairage (lance la commande avec sudo) :", err)
+			os.Exit(1)
+		}
+		fmt.Println("Appairage depuis le WiFi local ouvert pour 30 minutes : dans l'app PitBoard, Ajouter une imprimante > Pitboard Link.")
 	case "code":
 		// Lecture seule de etat.json (lisible par tous) : pas besoin des droits du service.
 		showCode(&Store{dir: *dir})
@@ -55,7 +63,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage : pitboard-link run|code|id|version [-dir DOSSIER]")
+	fmt.Fprintln(os.Stderr, "usage : pitboard-link run|code|appairage|id|version [-dir DOSSIER]")
 }
 
 func fatal(err error) {
@@ -81,10 +89,17 @@ func showCode(st *Store) {
 			c = c[:4] + "-" + c[4:]
 		}
 		fmt.Printf("\n  Code d'appairage : %s\n", c)
-		fmt.Printf("  Sur le même WiFi, l'app le lie toute seule (Ajouter une imprimante > Imprimante Klipper). Sinon, à saisir dans l'app dans les %d min.\n",
+		fmt.Printf("  À saisir dans l'app (Ajouter une imprimante > Pitboard Link), dans les %d min.\n",
 			max(1, int(time.Until(time.Unix(e.CodeExpire, 0)).Minutes())))
 	default:
 		fmt.Println("  Compte    : pas encore lié ; le code d'appairage arrive dès que le relais est joint.")
+	}
+	if !e.Lie {
+		if fin := st.FenetreAppairage(); !fin.IsZero() {
+			fmt.Printf("  Sur le même WiFi, l'app le trouve et le lie d'un geste jusqu'à %s.\n", fin.Format("15:04"))
+		} else {
+			fmt.Println("  Liaison depuis le WiFi fermée : « sudo pitboard-link appairage » l'ouvre pour 30 minutes.")
+		}
 	}
 }
 

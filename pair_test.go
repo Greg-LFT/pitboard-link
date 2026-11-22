@@ -29,8 +29,20 @@ func TestPairLocal(t *testing.T) {
 	if _, ok := d["code"]; ok {
 		t.Fatal("code donné sans tunnel")
 	}
+	if d["fenetre"] != false {
+		t.Fatalf("fenêtre ouverte sans installation : %v", d)
+	}
+	if err := st.OuvrirFenetre(); err != nil {
+		t.Fatal(err)
+	}
+	if _, d := lire("192.168.0.10"); d["fenetre"] != true {
+		t.Fatalf("fenêtre non signalée : %v", d)
+	}
 	st.SetToken("jeton-du-compte-0123")
 	if _, d := lire("192.168.0.10"); d["lie"] != true {
 		t.Fatalf("lié non signalé : %v", d)
+	}
+	if !st.FenetreAppairage().IsZero() {
+		t.Fatal("fenêtre restée ouverte après la liaison")
 	}
 }
