@@ -1,0 +1,32 @@
+name: Publication
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - name: Version
+        run: echo "V=$(grep -oP 'linkVersion = "\K[^"]+' main.go)" >> "$GITHUB_ENV"
+      - name: Déjà publiée ?
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: if gh release view "$V" >/dev/null 2>&1; then echo "FAIT=1" >> "$GITHUB_ENV"; echo "Version $V déjà publiée"; fi
+      - name: Tests et compilation
+        if: env.FAIT != '1'
+        run: |
+          go test ./...
+          mkdir dist
+          for a in arm64 armv7 mipsle amd64; do
+            case $a in armv7) E="GOARCH=arm GOARM=7";; mipsle) E="GOARCH=mipsle GOMIPS=softfloat";; *) E="GOARCH=$a";; esac
+            env CGO_ENABLED=0 GOOS=linux $E go build -trimpath -ldflags "-s -w" -o dist/pitboard-link-linux-$a .
+          done
+          cp install.sh dist/ && (cd dist && sha256sum pitboard-link-linux-* > SHA256SUMS)
+      - name: Publication
+        if: env.FAIT != '1'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: gh release create "$V" dist/* --target main --title "Pitboard Link $V" --notes "Installation : curl -fsSL https://github.com/Greg-LFT/pitboard-link/releases/latest/download/install.sh | sh"
