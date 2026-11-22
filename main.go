@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var linkVersion = "1.5.2"
+var linkVersion = "1.6.0"
 
 const defaultDir = "/opt/pitboard-link/data"
 
@@ -81,7 +81,7 @@ func showCode(st *Store) {
 			c = c[:4] + "-" + c[4:]
 		}
 		fmt.Printf("\n  Code d'appairage : %s\n", c)
-		fmt.Printf("  À saisir dans l'app PitBoard (Ajouter une imprimante > Pitboard Link), dans les %d min.\n",
+		fmt.Printf("  Sur le même WiFi, l'app le lie toute seule (Ajouter une imprimante > Imprimante Klipper). Sinon, à saisir dans l'app dans les %d min.\n",
 			max(1, int(time.Until(time.Unix(e.CodeExpire, 0)).Minutes())))
 	default:
 		fmt.Println("  Compte    : pas encore lié ; le code d'appairage arrive dès que le relais est joint.")

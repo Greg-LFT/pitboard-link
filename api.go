@@ -614,6 +614,22 @@ func (a *App) localHandler(w http.ResponseWriter, r *http.Request) {
 		a.streamCam(w, r)
 		return
 	}
+	// 1.6.0 : liaison au compte depuis le WiFi local, sans SSH : l'app (même réseau, adresse privée
+	// vérifiée plus haut) lit le code d'appairage en cours et le présente au relais avec son compte.
+	// Être sur le réseau de l'imprimante sert de preuve, comme pour un boîtier neuf.
+	if r.Method == "GET" && r.URL.Path == "/api/pair" {
+		d := M{"id": a.id, "version": linkVersion, "lie": tok != ""}
+		if tok == "" && a.tun != nil {
+			if c, exp := a.tun.CodeAppairage(); c != "" {
+				d["code"], d["exp"] = c, exp-time.Now().Unix()
+			}
+		}
+		b, _ := json.Marshal(d)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(b)
+		return
+	}
 	// 1.1.0 : appairage local d'un téléphone pour le chiffrement de bout en bout.
 	if r.URL.Path == "/api/e2e/enroll" || r.URL.Path == "/api/e2e/verify" {
 		if !full || r.Method != "POST" {
