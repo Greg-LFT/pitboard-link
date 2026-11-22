@@ -130,7 +130,9 @@ func (c *CamHub) loop() {
 		if err != nil {
 			fails++
 			c.mu.Lock()
-			if c.lastErr != err.Error() {
+			// 1.5.1 : pas de message au premier essai (au démarrage, la webcam n'est pas encore lue
+			// dans Moonraker) ; seulement si l'échec dure.
+			if c.lastErr != err.Error() && fails >= 3 {
 				log.Printf("caméra : %v", err)
 				c.lastErr = err.Error()
 			}

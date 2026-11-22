@@ -334,6 +334,7 @@ func (t *Tunnel) pusher(ctx context.Context) {
 	var lastSt, lastPing time.Time
 	var lastHist, lastPairReq time.Time
 	lastPairReq = time.Now() // le relais remet déjà un code à la connexion
+	mrVu := false            // 1.5.1 : etat.json réécrit dès que Moonraker répond (pitboard-link code)
 	for {
 		select {
 		case <-ctx.Done():
@@ -342,6 +343,12 @@ func (t *Tunnel) pusher(ctx context.Context) {
 		case <-t.app.changed:
 		}
 		now := time.Now()
+		if k := t.app.klipper(0); k != nil {
+			if c := k.Snapshot().Connected; c != mrVu {
+				mrVu = c
+				t.writeEtat()
+			}
+		}
 		if now.Sub(lastSt) >= 2*time.Second || lastSt.IsZero() {
 			st := t.app.statusJSON(true)
 			// L'âge et la durée de fonctionnement changent à chaque seconde : on les ignore pour décider.
