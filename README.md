@@ -51,6 +51,8 @@ Architectures : arm64, armv7, mipsle, amd64. Chaque exécutable est vérifié pa
   résumé de l'impression ; commandes et images caméra sont chiffrées (AES-256-GCM) avec une clé propre à
   chaque téléphone.
 - Sur le réseau local : HTTPS avec certificat épinglé par l'application, et jeton d'accès.
+- La clé de chiffrement de chaque téléphone est remise au Link sur le WiFi de l'imprimante, jamais
+  par le serveur (depuis 1.6.3).
 - Un téléphone non appairé est en lecture seule.
 
 ## Compatibilité

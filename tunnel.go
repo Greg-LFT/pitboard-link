@@ -288,36 +288,39 @@ func (t *Tunnel) session() error {
 }
 
 func (t *Tunnel) serveReq(ctx context.Context, id, method, uri string, body []byte) {
-	u, err := url.Parse(uri)
-	if err != nil {
+	if _, err := url.Parse(uri); err != nil {
 		t.send(fmt.Sprintf("RESP %s 400 text/plain 0", id), nil)
 		return
 	}
 	rctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	var code int
-	var mimeT string
-	var data []byte
-	switch {
-	case method == "POST" && u.Path == "/api/e2e":
-		// 1.1.0 : requête chiffrée de bout en bout (le relais ne la lit pas).
-		code, mimeT, data = t.app.e2e.Handle(rctx, t.app, body)
-	case method == "POST" && u.Path == "/api/e2e/pair":
-		// 1.1.1 : appairage à distance par le compte (vérifié ensuite sur le réseau local).
-		var s string
-		code, s = t.app.e2e.PairRemote(body)
-		mimeT, data = "application/json", []byte(s)
-	case method == "GET" && (u.Path == "/api/status" || u.Path == "/api/config"):
-		// Lecture seule : ce que voit un téléphone non appairé.
-		code, mimeT, data, _ = t.app.handle(rctx, method, u.Path, u.Query(), body, true)
-	default:
-		// Caméra, miniature, historique et commandes : de bout en bout seulement.
-		code, mimeT, data = 403, "application/json", []byte(`{"error":"e2e","why":"appairage"}`)
-	}
+	code, mimeT, data := t.route(rctx, method, uri, body)
 	if mimeT == "" {
 		mimeT = "text/plain"
 	}
 	t.send(fmt.Sprintf("RESP %s %d %s %d", id, code, mimeT, len(data)), data)
+}
+
+// route : réponse à une requête reçue du relais (1.6.3 : séparée de serveReq pour les tests).
+func (t *Tunnel) route(ctx context.Context, method, uri string, body []byte) (int, string, []byte) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return 400, "text/plain", nil
+	}
+	switch {
+	case method == "POST" && u.Path == "/api/e2e":
+		// 1.1.0 : requête chiffrée de bout en bout (le relais ne la lit pas).
+		return t.app.e2e.Handle(ctx, t.app, body)
+	case u.Path == "/api/e2e/pair":
+		// 1.6.3 : appairage à distance retiré ; l'appairage se fait sur le WiFi de l'imprimante.
+		return 403, "application/json", []byte(`{"error":"e2e","why":"local"}`)
+	case method == "GET" && (u.Path == "/api/status" || u.Path == "/api/config"):
+		// Lecture seule : ce que voit un téléphone non appairé.
+		code, mimeT, data, _ := t.app.handle(ctx, method, u.Path, u.Query(), body, true)
+		return code, mimeT, data
+	}
+	// Caméra, miniature, historique et commandes : de bout en bout seulement.
+	return 403, "application/json", []byte(`{"error":"e2e","why":"appairage"}`)
 }
 
 func hash32(b []byte) uint64 {

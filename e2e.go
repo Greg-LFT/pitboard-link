@@ -8,6 +8,11 @@ package main
 // Link, par le serveur local HTTPS (certificat épinglé, jeton local, adresses privées seulement).
 // Le relais ne voit jamais cette clé : il n'est pas sur le réseau de la maison.
 //
+// 1.6.3 : l'appairage se fait uniquement sur le réseau local. L'appairage à distance par le
+// compte (1.1.1, ECDH par le relais) est retiré : un relais compromis pouvait y créer ses propres
+// « téléphones » et envoyer des commandes. Les téléphones appairés ainsi et jamais vérifiés sont
+// oubliés au démarrage, et Handle refuse toute entrée non vérifiée.
+//
 // Ensuite, à distance :
 //   - requêtes : POST /api/e2e, corps opaque (AES-256-GCM), réponse opaque ;
 //   - caméra : images chiffrées avec une clé de caméra (AES-256-GCM), remise aux téléphones
@@ -28,7 +33,6 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -52,20 +56,19 @@ type e2eApp struct {
 	K string `json:"k"` // clé de 32 octets, base64
 	N string `json:"n"` // nom du téléphone
 	T int64  `json:"t"` // appairage (unix)
-	V bool   `json:"v"` // vérifié sur le réseau local (appairage local, ou appairage à distance contrôlé ensuite)
+	V bool   `json:"v"` // appairé sur le réseau local (seules ces entrées sont acceptées depuis 1.6.3)
 }
 
 type E2E struct {
 	store  *Store
 	linkID string
 
-	mu     sync.Mutex
-	apps   map[string]e2eApp
-	vus    map[string]time.Time // nonces déjà reçus (rejeu)
-	paires []time.Time          // appairages à distance récents (limite)
-	camID  [4]byte
-	camK   []byte
-	camT   time.Time
+	mu    sync.Mutex
+	apps  map[string]e2eApp
+	vus   map[string]time.Time // nonces déjà reçus (rejeu)
+	camID [4]byte
+	camK  []byte
+	camT  time.Time
 }
 
 func newE2E(s *Store, id string) *E2E {
@@ -77,6 +80,18 @@ func newE2E(s *Store, id string) *E2E {
 		if json.Unmarshal(b, &f) == nil && f.Apps != nil {
 			e.apps = f.Apps
 		}
+	}
+	// 1.6.3 : téléphones appairés à distance et jamais vérifiés sur le réseau local : oubliés.
+	n := 0
+	for id, a := range e.apps {
+		if !a.V {
+			delete(e.apps, id)
+			n++
+		}
+	}
+	if n > 0 {
+		e.saveLocked()
+		log.Printf("bout en bout : %d téléphone(s) appairé(s) à distance et non vérifié(s) oublié(s), à appairer sur le WiFi de l'imprimante", n)
 	}
 	e.rotateCam()
 	return e
@@ -162,77 +177,9 @@ func (e *E2E) limiterLocked() {
 	}
 }
 
-// PairRemote : appairage à distance par le compte (POST /api/e2e/pair, par le relais).
-// Échange ECDH P-256 : un relais qui ne fait qu'écouter n'apprend pas la clé. Un relais actif
-// pourrait s'interposer à ce moment-là ; le téléphone le détecte au premier passage sur le WiFi
-// de l'imprimante (Verify) et refait alors l'appairage en local.
-func (e *E2E) PairRemote(body []byte) (int, string) {
-	var r struct {
-		App  string `json:"app"`
-		Pub  string `json:"pub"`
-		Name string `json:"name"`
-	}
-	if json.Unmarshal(body, &r) != nil {
-		return 400, `{"error":"requête illisible"}`
-	}
-	app := strings.ToLower(strings.TrimSpace(r.App))
-	if raw, err := hex.DecodeString(app); err != nil || len(raw) != 8 {
-		return 400, `{"error":"identifiant de téléphone invalide"}`
-	}
-	pubB, err := base64.StdEncoding.DecodeString(r.Pub)
-	if err != nil {
-		return 400, `{"error":"clé publique invalide"}`
-	}
-	pubApp, err := ecdh.P256().NewPublicKey(pubB)
-	if err != nil {
-		return 400, `{"error":"clé publique invalide"}`
-	}
-	e.mu.Lock()
-	now := time.Now()
-	var recents []time.Time
-	for _, t := range e.paires {
-		if now.Sub(t) < time.Hour {
-			recents = append(recents, t)
-		}
-	}
-	if len(recents) >= 10 {
-		e.paires = recents
-		e.mu.Unlock()
-		return 429, `{"error":"trop d'appairages, réessayez plus tard"}`
-	}
-	e.paires = append(recents, now)
-	e.mu.Unlock()
-
-	priv, err := ecdh.P256().GenerateKey(rand.Reader)
-	if err != nil {
-		return 500, `{"error":"clé"}`
-	}
-	z, err := priv.ECDH(pubApp)
-	if err != nil {
-		return 400, `{"error":"clé publique invalide"}`
-	}
-	pubLink := priv.PublicKey().Bytes()
-	m := hmac.New(sha256.New, z)
-	m.Write([]byte("PB-E2E-PAIR-1"))
-	m.Write(pubB)
-	m.Write(pubLink)
-	k := m.Sum(nil)
-	name := strings.TrimSpace(r.Name)
-	if len(name) > 40 {
-		name = name[:40]
-	}
-	e.mu.Lock()
-	e.apps[app] = e2eApp{K: base64.StdEncoding.EncodeToString(k), N: name, T: now.Unix(), V: false}
-	e.limiterLocked()
-	e.saveLocked()
-	e.mu.Unlock()
-	log.Printf("bout en bout : téléphone %s appairé à distance (%q), à vérifier sur le réseau local", app, name)
-	b, _ := json.Marshal(map[string]any{"ok": true, "link": e.linkID, "pub": base64.StdEncoding.EncodeToString(pubLink)})
-	return 200, string(b)
-}
-
 // Verify : sur le réseau local, le téléphone prouve qu'il a la même clé que le Link
 // (HMAC(K, "PB-E2E-VERIFY-1")). Différente ou inconnue : ok=false, le téléphone refait l'appairage en local.
+// Gardé en 1.6.3 pour les apps qui vérifient encore leur clé ; appelé seulement par le serveur local.
 func (e *E2E) Verify(body []byte) (int, string) {
 	var r struct {
 		App   string `json:"app"`
@@ -249,18 +196,12 @@ func (e *E2E) Verify(body []byte) (int, string) {
 	proof, _ := base64.StdEncoding.DecodeString(r.Proof)
 	if !ok || len(k) != 32 || !hmac.Equal(proof, derive(k, "PB-E2E-VERIFY-1")) {
 		if ok {
-			// Clé différente : appairage à distance intercepté ou périmé ; ce téléphone est oublié.
+			// Clé différente : ce téléphone est oublié.
 			delete(e.apps, app)
 			e.saveLocked()
 			log.Printf("bout en bout : ALERTE clé différente pour le téléphone %s, appairage annulé", app)
 		}
 		return 200, `{"ok":false}`
-	}
-	if !rec.V {
-		rec.V = true
-		e.apps[app] = rec
-		e.saveLocked()
-		log.Printf("bout en bout : téléphone %s vérifié sur le réseau local", app)
 	}
 	return 200, `{"ok":true}`
 }
@@ -299,7 +240,8 @@ func (e *E2E) Handle(ctx context.Context, a *App, body []byte) (int, string, []b
 	e.mu.Lock()
 	rec, ok := e.apps[app]
 	e.mu.Unlock()
-	if !ok {
+	if !ok || !rec.V {
+		// 1.6.3 : seuls les téléphones appairés sur le réseau local sont acceptés.
 		return deny("inconnu")
 	}
 	k, err := base64.StdEncoding.DecodeString(rec.K)
